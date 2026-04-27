@@ -1,51 +1,51 @@
-# Syncwave
+# 🌊 Syncwave
 
-Distributed state management with real-time sync, offline persistence, event history, and deterministic conflict resolution.
+**Distributed state that feels local.**
+
+Syncwave gives you a single store API with:
+
+- 🔄 Real-time event sync
+- 📱 Offline persistence
+- ⏮️ Undo / redo
+- 🧭 Time-travel debugging
+- ⚔️ Deterministic conflict resolution
+- ⚛️ React, Vue, and Svelte integrations
+- 🔐 Optional encrypted transport codecs
+
+It is designed for apps where state moves across tabs, devices, workers, or servers and still needs to stay understandable.
 
 [![npm version](https://img.shields.io/npm/v/%40frxncisxo%2Fsyncwave)](https://www.npmjs.com/package/@frxncisxo/syncwave)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## Installation
+## ✨ Why Syncwave?
+
+Most state libraries stop at local state.
+
+Syncwave keeps the ergonomics of a local store, then adds the pieces distributed apps usually bolt on later:
+
+- live event replication
+- persistence and rehydration
+- event history
+- replayable state
+- conflict visibility
+- framework adapters
+
+The result is a store you can start small with and grow into multi-client sync without replacing the mental model.
+
+## 📦 Installation
 
 ```bash
 npm install @frxncisxo/syncwave
 ```
 
-Optional integrations:
+Optional framework peers:
 
 ```bash
 npm install react
 npm install vue
 ```
 
-## What You Get
-
-- Core store with nested path updates, history, undo/redo, snapshots, and event replay
-- Offline persistence with pluggable storage adapters and explicit rehydration
-- WebSocket sync adapter for multi-client replication
-- React hooks, Vue composables, and Svelte store adapters
-- Time-travel debugger helpers
-- Conflict monitoring utilities and a small React conflict list component
-- Encrypted sync codec for transport-level payload protection
-
-## Package Surface
-
-```ts
-import { createStore } from '@frxncisxo/syncwave';
-import { IndexedDBAdapter } from '@frxncisxo/syncwave/adapters';
-import { createWebSocketSyncAdapter } from '@frxncisxo/syncwave/sync';
-import { createTimeTravelDebugger } from '@frxncisxo/syncwave/debugger';
-import { createEncryptedSyncCodec } from '@frxncisxo/syncwave/encryption';
-```
-
-Framework-specific entry points:
-
-- `@frxncisxo/syncwave/react`
-- `@frxncisxo/syncwave/vue`
-- `@frxncisxo/syncwave/svelte`
-- `@frxncisxo/syncwave/conflicts`
-
-## Core Usage
+## 🚀 Quick Start
 
 ```ts
 import { createStore } from '@frxncisxo/syncwave';
@@ -57,7 +57,7 @@ const store = createStore({
 });
 
 const unsubscribe = store.subscribe((nextState, previousState) => {
-  console.log('count changed', previousState.count, '->', nextState.count);
+  console.log('count', previousState.count, '->', nextState.count);
 });
 
 store.set('user.name', 'Bob');
@@ -69,32 +69,40 @@ console.log(store.getSnapshot().version); // 2
 unsubscribe();
 ```
 
-## Offline Persistence
-
-Use a persistence adapter plus a stable `persistenceKey`. Await `whenReady()` before reading restored state.
+## 🧩 Package Surface
 
 ```ts
 import { createStore } from '@frxncisxo/syncwave';
 import { IndexedDBAdapter } from '@frxncisxo/syncwave/adapters';
-
-const store = createStore(
-  { todos: [], count: 0 },
-  {
-    offline: true,
-    undoRedo: true,
-    persistenceAdapter: new IndexedDBAdapter('syncwave-demo', 'state'),
-    persistenceKey: 'primary-tab',
-  }
-);
-
-await store.whenReady();
-
-store.set('todos', [{ id: 1, text: 'Ship Syncwave' }]);
+import { createWebSocketSyncAdapter } from '@frxncisxo/syncwave/sync';
+import { createTimeTravelDebugger } from '@frxncisxo/syncwave/debugger';
+import { createEncryptedSyncCodec } from '@frxncisxo/syncwave/encryption';
 ```
 
-## WebSocket Sync
+Framework subpaths:
 
-The sync adapter wraps a store and streams events over a WebSocket transport.
+- `@frxncisxo/syncwave/react`
+- `@frxncisxo/syncwave/vue`
+- `@frxncisxo/syncwave/svelte`
+- `@frxncisxo/syncwave/conflicts`
+
+## 🔄 Real-Time Sync
+
+Syncwave stores emit events locally and can import events from somewhere else.
+
+If you already have your own transport, that may be enough:
+
+```ts
+const storeA = createStore({ count: 0 });
+const storeB = createStore({ count: 0 });
+
+storeA.set('count', 1);
+storeB.importEvents(storeA.getHistory());
+
+console.log(storeB.getValue('count')); // 1
+```
+
+For WebSocket-based replication, use the sync adapter:
 
 ```ts
 import { createStore } from '@frxncisxo/syncwave';
@@ -116,11 +124,124 @@ console.log(sync.getStatus());
 // { connection: 'connected', queueSize: 0, lastSyncVersion: ... }
 ```
 
-If you already have your own transport, you can keep the core store and forward events yourself with `store.onEvent()` and `store.importEvents()`.
+## 📱 Offline-First Persistence
 
-## Encrypted Sync
+Use a persistence adapter plus a stable `persistenceKey`. Await `whenReady()` before assuming restored state is available.
 
-Pass the encrypted codec into the WebSocket sync adapter to protect payloads in transit.
+```ts
+import { createStore } from '@frxncisxo/syncwave';
+import { IndexedDBAdapter } from '@frxncisxo/syncwave/adapters';
+
+const store = createStore(
+  { todos: [], count: 0 },
+  {
+    offline: true,
+    undoRedo: true,
+    persistenceAdapter: new IndexedDBAdapter('syncwave-demo', 'state'),
+    persistenceKey: 'primary-tab',
+  }
+);
+
+await store.whenReady();
+
+store.set('todos', [{ id: 1, text: 'Ship Syncwave' }]);
+```
+
+Available storage adapters:
+
+- `IndexedDBAdapter`
+- `LocalStorageAdapter`
+- `AsyncStorageAdapter`
+- `MemoryAdapter`
+
+## ⚔️ Conflicts Without Guesswork
+
+Syncwave resolves concurrent writes deterministically and lets you observe what happened.
+
+```ts
+const local = createStore({ count: 0 });
+const remote = createStore({ count: 0 });
+
+local.onConflict((conflict) => {
+  console.log(conflict.path, conflict.local, conflict.remote, conflict.merged);
+});
+
+local.set('count', 5);
+remote.set('count', 10);
+
+local.importEvents(remote.getHistory());
+
+console.log(local.getValue('count')); // deterministic merged result
+```
+
+If you want a higher-level conflict feed:
+
+```ts
+import { ConflictMonitor } from '@frxncisxo/syncwave/conflicts';
+
+const monitor = new ConflictMonitor(local);
+console.log(monitor.getConflicts());
+```
+
+React conflict UI helper:
+
+```tsx
+import { ConflictList } from '@frxncisxo/syncwave/conflicts';
+
+<ConflictList store={store} emptyMessage="No sync conflicts yet." />;
+```
+
+## ⏮️ Undo, History, and Replay
+
+The store keeps an event log, so local state changes are inspectable and replayable.
+
+```ts
+const store = createStore({ count: 0 }, { undoRedo: true });
+
+store.set('count', 1);
+store.set('count', 2);
+store.set('count', 3);
+
+store.undo();
+console.log(store.getValue('count')); // 2
+
+store.redo();
+console.log(store.getValue('count')); // 3
+
+const history = store.getHistory();
+const countHistory = store.getPathHistory('count');
+const stateAtVersion2 = store.eventLog.replay({ count: 0 }, -1, 2);
+
+console.log(history.length);
+console.log(countHistory.length);
+console.log(stateAtVersion2.count);
+```
+
+## 🧭 Time-Travel Debugger
+
+```ts
+import { createStore } from '@frxncisxo/syncwave';
+import { createTimeTravelDebugger } from '@frxncisxo/syncwave/debugger';
+
+const store = createStore({ count: 0 }, { undoRedo: true });
+store.set('count', 1);
+store.set('count', 2);
+store.set('count', 3);
+
+const debuggerApi = createTimeTravelDebugger(store);
+
+console.log(debuggerApi.inspect(2).state.count); // 2
+
+debuggerApi.apply(1);
+console.log(store.getValue('count')); // 1
+
+debuggerApi.reset();
+console.log(store.getValue('count')); // 3
+```
+
+## 🔐 Encrypted Sync
+
+If your transport should not carry plain JSON payloads, pass an encrypted codec into the sync adapter.
 
 ```ts
 import { createStore } from '@frxncisxo/syncwave';
@@ -136,7 +257,7 @@ const sync = createWebSocketSyncAdapter(store, 'wss://sync.example.com', {
 await sync.connect();
 ```
 
-## React
+## ⚛️ React
 
 ```tsx
 import { useEffect } from 'react';
@@ -168,15 +289,7 @@ export function Counter() {
 }
 ```
 
-Conflict UI helpers for React:
-
-```tsx
-import { ConflictList } from '@frxncisxo/syncwave/conflicts';
-
-<ConflictList store={store} emptyMessage="No sync conflicts yet." />;
-```
-
-## Vue
+## 💚 Vue
 
 ```ts
 import { useStore, useStoreValue, useSubscribe } from '@frxncisxo/syncwave/vue';
@@ -191,7 +304,7 @@ useSubscribe(store, (nextState) => {
 store.set('count', count.value + 1);
 ```
 
-## Svelte
+## 🧡 Svelte
 
 ```ts
 import { createStore } from '@frxncisxo/syncwave';
@@ -201,92 +314,35 @@ import {
 } from '@frxncisxo/syncwave/svelte';
 
 const baseStore = createStore({ count: 0, user: { name: 'Alice' } });
+
 export const store = createSvelteStore(baseStore);
 export const count = selectStoreValue(baseStore, 'count');
 ```
 
-## Time Travel Debugger
-
-```ts
-import { createStore } from '@frxncisxo/syncwave';
-import { createTimeTravelDebugger } from '@frxncisxo/syncwave/debugger';
-
-const store = createStore({ count: 0 }, { undoRedo: true });
-store.set('count', 1);
-store.set('count', 2);
-store.set('count', 3);
-
-const debuggerApi = createTimeTravelDebugger(store);
-
-console.log(debuggerApi.inspect(2).state.count); // 2
-
-debuggerApi.apply(1);
-console.log(store.getValue('count')); // 1
-
-debuggerApi.reset();
-console.log(store.getValue('count')); // 3
-```
-
-## Conflict Monitoring
-
-You can subscribe to raw conflict resolutions or use the monitor abstraction.
-
-```ts
-import { createStore } from '@frxncisxo/syncwave';
-import { ConflictMonitor } from '@frxncisxo/syncwave/conflicts';
-
-const store = createStore({ count: 0 });
-const monitor = new ConflictMonitor(store);
-
-store.onConflict((conflict) => {
-  console.log(conflict.path, conflict.local, conflict.remote, conflict.merged);
-});
-
-console.log(monitor.getConflicts());
-```
-
-## Event History And Replay
-
-```ts
-const history = store.getHistory();
-const countHistory = store.getPathHistory('count');
-const stateAtVersion2 = store.eventLog.replay({ count: 0 }, -1, 2);
-
-console.log(history.length);
-console.log(countHistory.length);
-console.log(stateAtVersion2.count);
-```
-
-## API Reference
+## 🛠️ API Reference
 
 ### Store
 
-- `getState()`: returns a deep copy of the current state
-- `getValue(path)`: reads a nested value by path
-- `set(path, value)`: writes a value at a nested path
-- `merge(updates)`: deep-merges a partial update
-- `setState(updates)`: alias of `merge`
-- `delete(path)`: removes a value by path
-- `subscribe(listener)`: listens to state changes
-- `onEvent(listener)`: listens to emitted events
-- `onConflict(listener)`: listens to conflict resolutions
-- `undo()` / `redo()`: navigates local history
-- `getHistory()`: returns all events
-- `getPathHistory(path)`: returns history for a path prefix
-- `getSnapshot()`: returns state plus metadata
-- `getVersion()`: current visible version
-- `getLatestVersion()`: highest available event-log version
-- `getStateAtVersion(version)`: reconstructs state for a version
-- `travelTo(version)`: updates the store to a historical version
-- `whenReady()`: resolves when persistence rehydration is done
-- `importEvents(events)`: merges remote events into the local store
-
-### Adapters
-
-- `IndexedDBAdapter`
-- `LocalStorageAdapter`
-- `AsyncStorageAdapter`
-- `MemoryAdapter`
+- `getState()`
+- `getValue(path)`
+- `set(path, value)`
+- `merge(updates)`
+- `setState(updates)`
+- `delete(path)`
+- `subscribe(listener)`
+- `onEvent(listener)`
+- `onConflict(listener)`
+- `undo()`
+- `redo()`
+- `getHistory()`
+- `getPathHistory(path)`
+- `getSnapshot()`
+- `getVersion()`
+- `getLatestVersion()`
+- `getStateAtVersion(version)`
+- `travelTo(version)`
+- `whenReady()`
+- `importEvents(events)`
 
 ### Sync
 
@@ -306,16 +362,16 @@ console.log(stateAtVersion2.count);
 - `debugger.stepForward()`
 - `debugger.reset()`
 
-## Notes
+## 📝 Notes
 
-- Path access is string-based, for example `user.profile.name`.
-- Conflict resolution is deterministic and currently uses timestamp plus client ID ordering for concurrent writes.
-- The base package has no required runtime dependencies. React and Vue are optional peers used only for their subpath integrations.
+- Paths are string-based, for example `user.profile.name`.
+- Conflict resolution is deterministic and currently orders concurrent writes by timestamp and client ID.
+- The base package has no required runtime dependencies. React and Vue are optional peers used only in their subpath integrations.
 
-## Contributing
+## 🤝 Contributing
 
 Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## License
+## 📄 License
 
 MIT
