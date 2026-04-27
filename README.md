@@ -1,6 +1,12 @@
 # 🌊 Syncwave
 
-**Distributed state that feels local.**
+**Distributed state management with real-time sync, offline-first architecture, and automatic conflict resolution using CRDTs.**
+
+> State that syncs like a wave across your entire application stack—browser, mobile, server. No conflicts. Ever.
+
+[![npm version](https://img.shields.io/npm/v/syncwave)](https://www.npmjs.com/package/syncwave)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/username/syncwave/test.yml)](https://github.com/username/syncwave/actions)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 Syncwave gives you a single store API with:
 
