@@ -1,5 +1,35 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createStore } from './index';
+import {
+  createStore,
+  createTimeTravelDebugger,
+  createWebSocketSyncAdapter,
+  createEncryptedSyncCodec,
+} from './index';
+import { MemoryAdapter } from './adapters';
+import type { SyncMessage } from './types';
+import type { WebSocketLike } from './syncmanager';
+
+class FakeSocket implements WebSocketLike {
+  readyState = 1;
+  sent: string[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onerror: ((error: Event | Error) => void) | null = null;
+  onclose: (() => void) | null = null;
+
+  constructor() {
+    queueMicrotask(() => this.onopen?.());
+  }
+
+  send(data: string): void {
+    this.sent.push(data);
+  }
+
+  close(): void {
+    this.readyState = 3;
+    this.onclose?.();
+  }
+}
 
 /**
  * Exercises the public API and flows described in README.md so they stay true in code.
@@ -44,6 +74,34 @@ describe('README contract', () => {
     store.setState({ todos: [{ id: 1, text: 'Learn Syncwave' }] });
     expect(store.getValue('todos')).toEqual([{ id: 1, text: 'Learn Syncwave' }]);
     expect(store.getValue('count')).toBe(0);
+  });
+
+  it('offline persistence: whenReady restores state for a persistence key', async () => {
+    const adapter = new MemoryAdapter();
+    const first = createStore(
+      { count: 0 },
+      {
+        offline: true,
+        persistenceAdapter: adapter,
+        persistenceKey: 'readme-demo',
+      }
+    );
+
+    first.set('count', 9);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = createStore(
+      { count: 0 },
+      {
+        offline: true,
+        persistenceAdapter: adapter,
+        persistenceKey: 'readme-demo',
+      }
+    );
+
+    await second.whenReady();
+    expect(second.getValue('count')).toBe(9);
   });
 
   it('merge deep-merges nested objects (setState uses merge)', () => {
@@ -93,6 +151,22 @@ describe('README contract', () => {
     expect(at2.count).toBe(2);
   });
 
+  it('time-travel debugger inspects and applies history', () => {
+    const store = createStore({ count: 0 }, { undoRedo: true });
+    store.set('count', 1);
+    store.set('count', 2);
+    store.set('count', 3);
+
+    const debuggerApi = createTimeTravelDebugger(store);
+    expect(debuggerApi.inspect(2).state.count).toBe(2);
+
+    debuggerApi.apply(1);
+    expect(store.getValue('count')).toBe(1);
+
+    debuggerApi.reset();
+    expect(store.getValue('count')).toBe(3);
+  });
+
   it('multi-client: importEvents converges to LWW (README sync)', () => {
     const a = createStore({ data: 'initial' });
     vi.advanceTimersByTime(1);
@@ -111,6 +185,52 @@ describe('README contract', () => {
 
     expect(a.getValue('data')).toBe('client-b-change');
     expect(b.getValue('data')).toBe(a.getValue('data'));
+  });
+
+  it('websocket sync adapter reports status and emits sync messages', async () => {
+    const socket = new FakeSocket();
+    const store = createStore({ count: 0 });
+    const sync = createWebSocketSyncAdapter(store, 'ws://localhost:3000/sync', {
+      autoReconnect: false,
+      createSocket: () => socket,
+    });
+
+    await sync.connect();
+    store.set('count', 1);
+    await Promise.resolve();
+
+    const messages = socket.sent.map((payload) => JSON.parse(payload) as SyncMessage);
+    expect(sync.getStatus().connection).toBe('connected');
+    expect(messages.some((message) => message.type === 'init')).toBe(true);
+    expect(messages.some((message) => message.type === 'sync')).toBe(true);
+  });
+
+  it('encrypted sync codec encodes and decodes payloads', async () => {
+    const codec = createEncryptedSyncCodec('readme-secret');
+    const message: SyncMessage = {
+      type: 'sync',
+      clientId: 'client-1',
+      version: 1,
+      events: [
+        {
+          type: 'set',
+          path: 'count',
+          value: 1,
+          metadata: {
+            id: 'evt-1',
+            timestamp: Date.now(),
+            clientId: 'client-1',
+            sessionId: 'session-1',
+            version: 1,
+            parentVersion: 0,
+          },
+        },
+      ],
+    };
+
+    const encoded = await codec.encode(message);
+    expect(encoded).not.toContain('"count"');
+    await expect(codec.decode(encoded)).resolves.toEqual(message);
   });
 
   it('onConflict fires when merging concurrent sets from another client', () => {
