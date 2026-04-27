@@ -10,7 +10,7 @@
  * 
  * @example
  * ```ts
- * import { createStore } from 'syncwave';
+ * import { createStore } from '@frxncisxo/syncwave';
  * 
  * const store = createStore({
  *   todos: [],
@@ -42,6 +42,14 @@ export { Store, createStore } from './store';
 export { EventLog } from './eventlog';
 export { CRDTResolver } from './crdt';
 export { SyncManager } from './syncmanager';
+export { WebSocketSyncAdapter, createWebSocketSyncAdapter } from './sync';
+export { TimeTravelDebugger, createTimeTravelDebugger } from './debugger';
+export {
+  EncryptedSyncCodec,
+  createEncryptedSyncCodec,
+  encryptSyncMessage,
+  decryptSyncMessage,
+} from './encryption';
 
 // Server
 export { SyncServer, createSyncServer } from './server';
@@ -62,11 +70,21 @@ export type {
   StateEvent,
   StateSnapshot,
   SyncMessage,
-  ConflictResolution,
   StateListener,
   EventListener,
   ConflictListener,
+  ConflictResolution,
 } from './types';
+
+export type {
+  SyncManagerOptions,
+  SyncMessageCodec,
+  WebSocketLike,
+} from './syncmanager';
+export type { WebSocketSyncAdapterOptions, WebSocketSyncStatus } from './sync';
+export type { TimeTravelFrame } from './debugger';
+export type { ConflictRecord } from './conflicts';
+export type { EncryptedSyncPayload } from './encryption';
 
 // Utilities
 export {

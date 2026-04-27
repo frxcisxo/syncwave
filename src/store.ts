@@ -51,6 +51,8 @@ export class Store<T extends Record<string, any>> {
   private undoStack: number[] = [];
   private redoStack: number[] = [];
   private persistenceAdapter?: StorageAdapter;
+  private persistenceKey: string;
+  private readyPromise: Promise<void> = Promise.resolve();
   private isSyncing = false;
   private version = 0;
 
@@ -66,16 +68,18 @@ export class Store<T extends Record<string, any>> {
       offline: config?.offline ?? true,
       undoRedo: config?.undoRedo ?? true,
       persistenceAdapter: config?.persistenceAdapter || undefined,
+      persistenceKey: config?.persistenceKey || 'default',
       maxHistorySize: config?.maxHistorySize || 10000,
       debounceMs: config?.debounceMs || 100,
     };
 
     this.eventLog = new EventLog(this.clientId, this.config.maxHistorySize);
     this.persistenceAdapter = this.config.persistenceAdapter;
+    this.persistenceKey = `syncwave:${this.config.persistenceKey}`;
 
     // Load from persistence if available
     if (this.persistenceAdapter) {
-      this.loadFromPersistence();
+      this.readyPromise = this.loadFromPersistence();
     }
   }
 
@@ -107,7 +111,7 @@ export class Store<T extends Record<string, any>> {
     const previousValue = getAtPath(this.state, path);
     const newState = setAtPath(this.state, path, value);
 
-    if (deepEqual(this.state, newState)) {
+    if (newState === this.state) {
       return;
     }
 
@@ -140,7 +144,7 @@ export class Store<T extends Record<string, any>> {
     const previousValue = getAtPath(this.state, path);
     const newState = deleteAtPath(this.state, path);
 
-    if (deepEqual(this.state, newState)) {
+    if (newState === this.state) {
       return;
     }
 
@@ -170,10 +174,10 @@ export class Store<T extends Record<string, any>> {
    * Merge updates into state
    */
   merge(updates: Partial<T>): void {
-    const previousState = deepClone(this.state);
+    const previousState = this.state;
     const newState = deepMerge(this.state, updates);
 
-    if (deepEqual(previousState, newState)) {
+    if (newState === previousState) {
       return;
     }
 
@@ -202,7 +206,7 @@ export class Store<T extends Record<string, any>> {
     }
 
     const lastEventVersion = this.undoStack.pop()!;
-    const previousState = deepClone(this.state);
+    const previousState = this.state;
 
     // Replay from initial state up through the event before the one we undo
     this.state = this.eventLog.replay(
@@ -226,7 +230,7 @@ export class Store<T extends Record<string, any>> {
     }
 
     const versionToApply = this.redoStack.pop()!;
-    const previousState = deepClone(this.state);
+    const previousState = this.state;
 
     this.state = this.eventLog.replay(
       this.initialState,
@@ -286,6 +290,28 @@ export class Store<T extends Record<string, any>> {
   }
 
   /**
+   * Get the latest available version in the event log.
+   */
+  getLatestVersion(): number {
+    return this.eventLog.getCurrentVersion();
+  }
+
+  /**
+   * Get a reconstructed state snapshot for a version.
+   */
+  getStateAtVersion(version: number): T {
+    const targetVersion = Math.max(0, Math.min(version, this.getLatestVersion()));
+    return this.eventLog.replay(this.initialState, -1, targetVersion);
+  }
+
+  /**
+   * Resolve once persistence rehydration has completed.
+   */
+  whenReady(): Promise<void> {
+    return this.readyPromise;
+  }
+
+  /**
    * Get snapshot of current state
    */
   getSnapshot(): StateSnapshot<T> {
@@ -301,7 +327,7 @@ export class Store<T extends Record<string, any>> {
    * Reset to initial state
    */
   reset(): void {
-    const previousState = deepClone(this.state);
+    const previousState = this.state;
     this.state = deepClone(this.initialState);
     this.version = 0;
     this.eventLog.clear();
@@ -313,19 +339,40 @@ export class Store<T extends Record<string, any>> {
   }
 
   /**
+   * Replay state at a specific version without mutating history.
+   */
+  travelTo(version: number): void {
+    const targetVersion = Math.max(0, Math.min(version, this.getLatestVersion()));
+    if (this.version === targetVersion) {
+      return;
+    }
+
+    const previousState = this.state;
+    const nextState = this.eventLog.replay(this.initialState, -1, targetVersion);
+
+    this.state = nextState;
+    this.version = targetVersion;
+    this.notifyStateListeners(this.state, previousState);
+  }
+
+  /**
    * Import external events (for sync)
    */
   importEvents(events: StateEvent[]): void {
-    const previousState = deepClone(this.state);
-    const localLogBeforeMerge = this.eventLog.getAll();
+    const previousState = this.state;
+    const latestLocalSetByPath = new Map<string, StateEvent>();
+
+    for (const event of this.eventLog.getAll()) {
+      if (event.type === 'set') {
+        latestLocalSetByPath.set(event.path, event);
+      }
+    }
 
     for (const incoming of events) {
       if (incoming.type !== 'set') continue;
       if (incoming.metadata.clientId === this.clientId) continue;
 
-      const localOnPath = [...localLogBeforeMerge]
-        .reverse()
-        .find((e) => e.path === incoming.path && e.type === 'set');
+      const localOnPath = latestLocalSetByPath.get(incoming.path);
       if (!localOnPath) continue;
       if (deepEqual(localOnPath.value, incoming.value)) continue;
 
@@ -339,7 +386,10 @@ export class Store<T extends Record<string, any>> {
       );
     }
 
-    this.eventLog.import(events);
+    const didImport = this.eventLog.import(events);
+    if (!didImport) {
+      return;
+    }
 
     // Replay entire history; remote merge invalidates linear undo stacks
     this.undoStack = [];
@@ -347,7 +397,7 @@ export class Store<T extends Record<string, any>> {
     this.state = this.eventLog.replay(this.initialState, -1);
     this.version = this.eventLog.getCurrentVersion();
 
-    if (!deepEqual(previousState, this.state)) {
+    if (previousState !== this.state) {
       this.notifyStateListeners(this.state, previousState);
       this.persistState();
     }
@@ -413,7 +463,7 @@ export class Store<T extends Record<string, any>> {
       };
 
       await this.persistenceAdapter.set(
-        `syncwave:${this.clientId}`,
+        this.persistenceKey,
         JSON.stringify(data)
       );
     } catch (error) {
@@ -425,7 +475,7 @@ export class Store<T extends Record<string, any>> {
     if (!this.persistenceAdapter) return;
 
     try {
-      const data = await this.persistenceAdapter.get(`syncwave:${this.clientId}`);
+      const data = await this.persistenceAdapter.get(this.persistenceKey);
       if (!data) return;
 
       const { snapshot, events, version } = JSON.parse(data);

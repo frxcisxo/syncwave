@@ -49,6 +49,10 @@ export class CRDTResolver {
       remote,
       merged,
       strategy,
+      path: remoteEvent.path || localEvent.path,
+      timestamp: Math.max(localTime, remoteTime),
+      localEventId: localEvent.metadata.id,
+      remoteEventId: remoteEvent.metadata.id,
     };
   }
 

@@ -14,6 +14,7 @@ export interface SyncConfig {
   offline?: boolean;
   undoRedo?: boolean;
   persistenceAdapter?: StorageAdapter;
+  persistenceKey?: string;
   maxHistorySize?: number;
   debounceMs?: number;
 }
@@ -56,6 +57,10 @@ export interface ConflictResolution<T = any> {
   remote: T;
   merged: T;
   strategy: 'local' | 'remote' | 'crdt' | 'manual';
+  path?: string;
+  timestamp?: number;
+  localEventId?: string;
+  remoteEventId?: string;
 }
 
 export type StateListener<T = any> = (newState: T, oldState: T) => void;

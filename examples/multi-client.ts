@@ -8,7 +8,7 @@
  * - Event history & undo/redo
  */
 
-import { createStore, type StateEvent } from './src/index';
+import { createStore, type StateEvent } from '../src/index';
 
 interface AppState {
   todos: Array<{ id: number; text: string; done: boolean }>;
@@ -165,6 +165,8 @@ console.log('  [Concurrent] Store Y: count = 200\n');
 
 storeX.set('count', 100);
 storeY.set('count', 200);
+storeX.importEvents(storeY.getHistory());
+storeY.importEvents(storeX.getHistory());
 
 console.log('  Both resolve to same value via CRDT (Last-Write-Wins + client ID):');
 console.log(`    Store X: ${storeX.getValue('count')}`);
@@ -280,5 +282,5 @@ console.log('  ✅ Automatic CRDT conflict resolution');
 console.log('  ✅ Undo/Redo support');
 console.log('  ✅ Full event history');
 console.log('  ✅ Type-safe with TypeScript');
-console.log('  ✅ Zero external dependencies');
+console.log('  ✅ Runtime dependency-free core');
 console.log('\n');

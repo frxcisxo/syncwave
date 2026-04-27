@@ -2,6 +2,24 @@
  * Utility functions for Syncwave
  */
 
+const hasOwn = Object.prototype.hasOwnProperty;
+
+function isObjectLike(value: unknown): value is Record<string, any> {
+  return value !== null && typeof value === 'object';
+}
+
+function cloneContainer<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.slice() as T;
+  }
+
+  if (isObjectLike(value)) {
+    return { ...value } as T;
+  }
+
+  return {} as T;
+}
+
 /**
  * Generate unique ID using timestamp + random
  * Good for distributed systems, minimal collision
@@ -18,11 +36,11 @@ export function generateId(): string {
 export function deepClone<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
   if (obj instanceof Date) return new Date(obj.getTime()) as any;
-  if (obj instanceof Array) return obj.map((item) => deepClone(item)) as any;
+  if (Array.isArray(obj)) return obj.map((item) => deepClone(item)) as any;
   if (obj instanceof Object) {
     const clonedObj = {} as T;
     for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
+      if (hasOwn.call(obj, key)) {
         clonedObj[key] = deepClone(obj[key]);
       }
     }
@@ -35,29 +53,34 @@ export function deepClone<T>(obj: T): T {
  * Deep merge two objects (right overwrites left)
  */
 export function deepMerge<T>(left: T, right: Partial<T>): T {
-  const result = deepClone(left);
+  const mergeValues = (target: any, source: any): any => {
+    if (!isObjectLike(source) || Array.isArray(source)) {
+      return deepEqual(target, source) ? target : deepClone(source);
+    }
 
-  const merge = (target: any, source: any) => {
+    const base = isObjectLike(target) && !Array.isArray(target) ? target : {};
+    let result = base;
+    let changed = !isObjectLike(target) || Array.isArray(target);
+
     for (const key in source) {
-      if (source.hasOwnProperty(key)) {
-        if (
-          typeof source[key] === 'object' &&
-          source[key] !== null &&
-          !Array.isArray(source[key])
-        ) {
-          if (!(key in target) || typeof target[key] !== 'object') {
-            target[key] = {};
-          }
-          merge(target[key], source[key]);
-        } else {
-          target[key] = source[key];
+      if (!hasOwn.call(source, key)) continue;
+
+      const currentValue = base[key];
+      const nextValue = mergeValues(currentValue, source[key]);
+
+      if (nextValue !== currentValue) {
+        if (!changed) {
+          result = { ...base };
+          changed = true;
         }
+        result[key] = nextValue;
       }
     }
+
+    return changed ? result : target;
   };
 
-  merge(result, right);
-  return result;
+  return mergeValues(left, right);
 }
 
 /**
@@ -67,6 +90,7 @@ export function deepEqual(a: any, b: any): boolean {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object') return false;
   if (a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
 
   const keysA = Object.keys(a);
   const keysB = Object.keys(b);
@@ -99,37 +123,73 @@ export function getAtPath(obj: any, path: string): any {
  * Set value at path in object
  */
 export function setAtPath(obj: any, path: string, value: any): any {
-  const result = deepClone(obj);
   const parts = path.split('.');
-  let current = result;
 
-  for (let i = 0; i < parts.length - 1; i++) {
-    const part = parts[i];
-    if (!(part in current)) {
-      current[part] = {};
+  const update = (current: any, index: number): any => {
+    const key = parts[index];
+    const container = isObjectLike(current) ? current : {};
+
+    if (index === parts.length - 1) {
+      const existingValue = container[key];
+      if (deepEqual(existingValue, value)) {
+        return current;
+      }
+
+      const clone = cloneContainer(container);
+      clone[key] = deepClone(value);
+      return clone;
     }
-    current = current[part];
-  }
 
-  current[parts[parts.length - 1]] = value;
-  return result;
+    const existingChild = container[key];
+    const nextChild = update(existingChild, index + 1);
+
+    if (nextChild === existingChild) {
+      return current;
+    }
+
+    const clone = cloneContainer(container);
+    clone[key] = nextChild;
+    return clone;
+  };
+
+  return update(obj, 0);
 }
 
 /**
  * Delete value at path in object
  */
 export function deleteAtPath(obj: any, path: string): any {
-  const result = deepClone(obj);
   const parts = path.split('.');
-  let current = result;
 
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (!(parts[i] in current)) return result;
-    current = current[parts[i]];
-  }
+  const remove = (current: any, index: number): any => {
+    if (!isObjectLike(current)) {
+      return current;
+    }
 
-  delete current[parts[parts.length - 1]];
-  return result;
+    const key = parts[index];
+    if (!hasOwn.call(current, key)) {
+      return current;
+    }
+
+    if (index === parts.length - 1) {
+      const clone = cloneContainer(current);
+      delete clone[key];
+      return clone;
+    }
+
+    const existingChild = current[key];
+    const nextChild = remove(existingChild, index + 1);
+
+    if (nextChild === existingChild) {
+      return current;
+    }
+
+    const clone = cloneContainer(current);
+    clone[key] = nextChild;
+    return clone;
+  };
+
+  return remove(obj, 0);
 }
 
 /**

@@ -4,8 +4,7 @@
 
 > State that syncs like a wave across your entire application stack—browser, mobile, server. No conflicts. Ever.
 
-[![npm version](https://img.shields.io/npm/v/syncwave)](https://www.npmjs.com/package/syncwave)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/username/syncwave/test.yml)](https://github.com/username/syncwave/actions)
+[![npm version](https://img.shields.io/npm/v/%40frxncisxo%2Fsyncwave)](https://www.npmjs.com/package/@frxncisxo/syncwave)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## Why Syncwave?
@@ -75,7 +74,7 @@ const stateAtTime = store.eventLog.replay(initialState, 0, targetVersion);
 ## Installation
 
 ```bash
-npm install syncwave
+npm install @frxncisxo/syncwave
 ```
 
 ## Quick Start
@@ -83,7 +82,7 @@ npm install syncwave
 ### Basic Usage
 
 ```typescript
-import { createStore } from 'syncwave';
+import { createStore } from '@frxncisxo/syncwave';
 
 // Create a store
 const store = createStore({
@@ -109,7 +108,7 @@ console.log(state.user.name); // 'Bob'
 ### With Offline Support
 
 ```typescript
-import { createStore } from 'syncwave';
+import { createStore } from '@frxncisxo/syncwave';
 
 const store = createStore(
   { todos: [], count: 0 },
@@ -241,6 +240,9 @@ Get events for specific path.
 #### `getSnapshot(): StateSnapshot<T>`
 Get current state snapshot with metadata.
 
+#### `whenReady(): Promise<void>`
+Wait for persistence rehydration to finish.
+
 #### `getVersion(): number`
 Get current version number.
 
@@ -253,7 +255,7 @@ Import events from other clients (used internally for sync).
 ## Advanced: Custom Persistence
 
 ```typescript
-import { createStore } from 'syncwave';
+import { createStore } from '@frxncisxo/syncwave';
 
 const customPersistence = {
   async get(key: string) {
@@ -272,6 +274,7 @@ const customPersistence = {
 
 const store = createStore(initialState, {
   persistenceAdapter: customPersistence,
+  persistenceKey: 'app-state',
   offline: true,
 });
 ```
@@ -303,8 +306,7 @@ Maintains version history. Undo/Redo works by:
 
 ## Performance
 
-- **Lightweight**: ~5KB gzipped
-- **No dependencies**: Zero external packages
+- **Runtime dependency-free core**: No required runtime dependencies for the base store
 - **Efficient diffs**: Only sends changed data
 - **Memory-bounded**: Configurable history limit
 
@@ -345,14 +347,14 @@ MIT © 2024
 
 ## Roadmap
 
-- [ ] WebSocket sync adapter
-- [ ] IndexedDB adapter
-- [ ] React hooks (useStore, useSubscribe)
-- [ ] Vue composables
-- [ ] Svelte stores
-- [ ] Time-travel debugger
-- [ ] Conflict visualization UI
-- [ ] Encrypted sync
+- [x] WebSocket sync adapter
+- [x] IndexedDB adapter
+- [x] React hooks (useStore, useSubscribe)
+- [x] Vue composables
+- [x] Svelte stores
+- [x] Time-travel debugger
+- [x] Conflict visualization UI
+- [x] Encrypted sync
 
 ## Inspiration
 
@@ -366,13 +368,13 @@ Built on the same principles as:
 ## Get Started
 
 ```bash
-npm install syncwave
+npm install @frxncisxo/syncwave
 ```
 
-Read the [full docs](https://syncwave.dev) or check [examples](./examples).
+Check the [examples](./examples) or open an issue on GitHub for usage questions.
 
 ---
 
 Made with ❤️ by developers, for developers.
 
-**Questions?** Open an issue on [GitHub](https://github.com/username/syncwave).
+**Questions?** Open an issue on [GitHub](https://github.com/frxcisxo/syncwave).

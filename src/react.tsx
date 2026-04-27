@@ -25,12 +25,14 @@ import {
   useState,
   useCallback,
   useRef,
+  useSyncExternalStore,
   ReactNode,
   createContext,
   useContext,
 } from 'react';
 import type { Store, SyncConfig } from './index';
 import { createStore } from './store';
+import { getAtPath } from './utils';
 
 /**
  * Hook: Get current state and auto-update on changes
@@ -43,17 +45,11 @@ import { createStore } from './store';
  * ```
  */
 export function useStoreState<T extends Record<string, any>>(store: Store<T>): T {
-  const [state, setState] = useState(() => store.getState());
-
-  useEffect(() => {
-    const unsubscribe = store.subscribe((newState) => {
-      setState(newState);
-    });
-
-    return unsubscribe;
-  }, [store]);
-
-  return state;
+  return useSyncExternalStore(
+    (listener) => store.subscribe(() => listener()),
+    () => store.getState(),
+    () => store.getState()
+  );
 }
 
 /**
@@ -112,17 +108,17 @@ export function useStoreValue<T extends Record<string, any>, V = any>(
   path: string
 ): V {
   const state = useStoreState(store);
-  const getAtPath = (obj: any, pathStr: string) => {
-    const parts = pathStr.split('.');
-    let current = obj;
-    for (const part of parts) {
-      if (current == null) return undefined;
-      current = current[part];
-    }
-    return current;
-  };
-
   return getAtPath(state, path);
+}
+
+/**
+ * Hook: subscribe to store updates without pulling state into render.
+ */
+export function useSubscribe<T extends Record<string, any>>(
+  store: Store<T>,
+  listener: (newState: T, oldState: T) => void
+): void {
+  useEffect(() => store.subscribe(listener), [store, listener]);
 }
 
 /**

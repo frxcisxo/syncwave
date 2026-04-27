@@ -1,6 +1,31 @@
 import { Store } from './store';
 import { StateEvent, SyncMessage } from './types';
-import { debounce, generateId } from './utils';
+import { generateId } from './utils';
+
+export interface WebSocketLike {
+  readyState: number;
+  send(data: string): void;
+  close(): void;
+  onopen: (() => void) | null;
+  onmessage: ((event: { data: string }) => void) | null;
+  onerror: ((error: Event | Error) => void) | null;
+  onclose: (() => void) | null;
+}
+
+export interface SyncMessageCodec {
+  encode(message: SyncMessage): string | Promise<string>;
+  decode(payload: string): SyncMessage | Promise<SyncMessage>;
+}
+
+export interface SyncManagerOptions {
+  createSocket?: (url: string) => WebSocketLike;
+  codec?: SyncMessageCodec;
+  autoReconnect?: boolean;
+  heartbeatIntervalMs?: number;
+  reconnectDelayMs?: number;
+  maxReconnectDelayMs?: number;
+  maxReconnectAttempts?: number;
+}
 
 /**
  * SyncManager: Real-time WebSocket sync
@@ -14,26 +39,43 @@ import { debounce, generateId } from './utils';
  * - Message queuing during offline
  */
 export class SyncManager {
+  private static readonly OPEN = 1;
   private store: Store<any>;
   private serverUrl: string;
-  private socket: WebSocket | null = null;
+  private socket: WebSocketLike | null = null;
   private clientId: string;
   private sessionId: string;
   private lastSyncVersion: number = 0;
   private messageQueue: StateEvent[] = [];
   private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 10;
-  private reconnectDelay: number = 1000; // Start at 1s
-  private maxReconnectDelay: number = 30000; // Max 30s
+  private maxReconnectAttempts: number;
+  private reconnectDelay: number;
+  private maxReconnectDelay: number;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private isConnecting: boolean = false;
   private listeners = new Map<string, Set<(data: any) => void>>();
+  private createSocket: (url: string) => WebSocketLike;
+  private codec: SyncMessageCodec;
+  private autoReconnect: boolean;
+  private heartbeatIntervalMs: number;
 
-  constructor(store: Store<any>, serverUrl: string) {
+  constructor(store: Store<any>, serverUrl: string, options: SyncManagerOptions = {}) {
     this.store = store;
     this.serverUrl = serverUrl;
     this.clientId = store.getClientId();
     this.sessionId = generateId();
+    this.maxReconnectAttempts = options.maxReconnectAttempts ?? 10;
+    this.reconnectDelay = options.reconnectDelayMs ?? 1000;
+    this.maxReconnectDelay = options.maxReconnectDelayMs ?? 30000;
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 30000;
+    this.autoReconnect = options.autoReconnect ?? true;
+    this.createSocket =
+      options.createSocket ??
+      ((url) => new WebSocket(url) as unknown as WebSocketLike);
+    this.codec = options.codec ?? {
+      encode: (message) => JSON.stringify(message),
+      decode: (payload) => JSON.parse(payload) as SyncMessage,
+    };
 
     // Subscribe to local events
     this.store.onEvent((event) => {
@@ -45,14 +87,14 @@ export class SyncManager {
    * Connect to sync server
    */
   async connect(): Promise<void> {
-    if (this.isConnecting || this.socket?.readyState === WebSocket.OPEN) {
+    if (this.isConnecting || this.socket?.readyState === SyncManager.OPEN) {
       return;
     }
 
     this.isConnecting = true;
 
     try {
-      this.socket = new WebSocket(this.serverUrl);
+      this.socket = this.createSocket(this.serverUrl);
 
       this.socket.onopen = () => this.onOpen();
       this.socket.onmessage = (event) => this.onMessage(event);
@@ -77,12 +119,14 @@ export class SyncManager {
       });
 
       this.reconnectAttempts = 0;
-      this.reconnectDelay = 1000;
+      this.reconnectDelay = this.reconnectDelay || 1000;
       this.isConnecting = false;
     } catch (error) {
       this.isConnecting = false;
       console.error('Failed to connect:', error);
-      this.scheduleReconnect();
+      if (this.autoReconnect) {
+        this.scheduleReconnect();
+      }
     }
   }
 
@@ -108,7 +152,7 @@ export class SyncManager {
       return;
     }
 
-    this.send({
+    void this.dispatch({
       type: 'sync',
       clientId: this.clientId,
       events: [event],
@@ -130,10 +174,15 @@ export class SyncManager {
   /**
    * Send message to server
    */
-  private send(message: SyncMessage): void {
+  private async dispatch(message: SyncMessage): Promise<void> {
     if (this.isConnected()) {
-      this.socket!.send(JSON.stringify(message));
-    } else {
+      try {
+        const payload = await this.codec.encode(message);
+        this.socket!.send(payload);
+      } catch (error) {
+        console.error('Failed to encode sync message:', error);
+      }
+    } else if (message.type === 'sync') {
       this.messageQueue.push(...message.events);
     }
   }
@@ -145,7 +194,7 @@ export class SyncManager {
     console.log('✅ Connected to sync server');
 
     // Send init message
-    this.send({
+    void this.dispatch({
       type: 'init',
       clientId: this.clientId,
       events: this.store.getHistory().slice(this.lastSyncVersion),
@@ -157,14 +206,14 @@ export class SyncManager {
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     this.heartbeatInterval = setInterval(() => {
       if (this.isConnected()) {
-        this.send({
+        void this.dispatch({
           type: 'heartbeat',
           clientId: this.clientId,
           events: [],
           version: this.store.getVersion(),
         });
       }
-    }, 30000);
+    }, this.heartbeatIntervalMs);
 
     // Flush queued messages
     this.flushQueue();
@@ -172,9 +221,9 @@ export class SyncManager {
     this.emit('connected');
   }
 
-  private onMessage(event: MessageEvent<any>): void {
+  private async onMessage(event: { data: string }): Promise<void> {
     try {
-      const message: SyncMessage = JSON.parse(event.data);
+      const message = await this.codec.decode(event.data);
 
       switch (message.type) {
         case 'sync':
@@ -204,7 +253,7 @@ export class SyncManager {
     }
   }
 
-  private onError(error: Event): void {
+  private onError(error: Event | Error): void {
     console.error('WebSocket error:', error);
     this.emit('error', error);
   }
@@ -213,7 +262,9 @@ export class SyncManager {
     console.log('❌ Disconnected from sync server');
     this.heartbeatInterval && clearInterval(this.heartbeatInterval);
     this.emit('disconnected');
-    this.scheduleReconnect();
+    if (this.autoReconnect) {
+      this.scheduleReconnect();
+    }
   }
 
   /**
@@ -247,7 +298,7 @@ export class SyncManager {
     console.log(`📤 Flushing ${this.messageQueue.length} queued events`);
 
     const batch = this.messageQueue.splice(0, 100); // Send in batches
-    this.send({
+    void this.dispatch({
       type: 'sync',
       clientId: this.clientId,
       events: batch,
@@ -263,7 +314,7 @@ export class SyncManager {
    * Check connection status
    */
   private isConnected(): boolean {
-    return this.socket?.readyState === WebSocket.OPEN;
+    return this.socket?.readyState === SyncManager.OPEN;
   }
 
   /**
@@ -280,6 +331,10 @@ export class SyncManager {
    */
   getQueueSize(): number {
     return this.messageQueue.length;
+  }
+
+  getLastSyncVersion(): number {
+    return this.lastSyncVersion;
   }
 
   /**

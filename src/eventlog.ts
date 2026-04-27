@@ -1,5 +1,5 @@
 import { StateEvent, EventMetadata } from './types';
-import { generateId } from './utils';
+import { deleteAtPath, deepClone, generateId, setAtPath } from './utils';
 
 /**
  * EventLog: Immutable event history
@@ -12,6 +12,7 @@ import { generateId } from './utils';
  */
 export class EventLog {
   private events: StateEvent[] = [];
+  private eventIds = new Set<string>();
   private version: number = 0;
   private maxSize: number;
   private clientId: string;
@@ -52,10 +53,14 @@ export class EventLog {
     };
 
     this.events.push(event);
+    this.eventIds.add(event.metadata.id);
 
     // Keep log size bounded
     if (this.events.length > this.maxSize) {
-      this.events.shift();
+      const removed = this.events.shift();
+      if (removed) {
+        this.eventIds.delete(removed.metadata.id);
+      }
     }
 
     return event;
@@ -97,11 +102,11 @@ export class EventLog {
     fromVersion: number = 0,
     toVersion?: number
   ): T {
-    let state = JSON.parse(JSON.stringify(initialState));
+    let state = deepClone(initialState);
 
     const relevantEvents = this.events.filter((e) => {
       const v = e.metadata.version;
-      return v > fromVersion && (!toVersion || v <= toVersion);
+      return v > fromVersion && (toVersion === undefined || v <= toVersion);
     });
 
     for (const event of relevantEvents) {
@@ -139,6 +144,7 @@ export class EventLog {
    */
   clear(): void {
     this.events = [];
+    this.eventIds.clear();
     this.version = 0;
   }
 
@@ -152,16 +158,22 @@ export class EventLog {
   /**
    * Import events (merge with existing)
    */
-  import(events: StateEvent[]): void {
+  import(events: StateEvent[]): boolean {
+    let added = false;
+
     for (const event of events) {
-      const existingIndex = this.events.findIndex(
-        (e) => e.metadata.id === event.metadata.id
-      );
-      if (existingIndex === -1) {
+      if (!this.eventIds.has(event.metadata.id)) {
         this.events.push(event);
+        this.eventIds.add(event.metadata.id);
         this.version = Math.max(this.version, event.metadata.version);
+        added = true;
       }
     }
+
+    if (!added) {
+      return false;
+    }
+
     // Total order for replay: timestamp first, then per-replica version (causal order),
     // then client id across replicas, then id for full determinism.
     this.events.sort((a, b) => {
@@ -178,7 +190,17 @@ export class EventLog {
     this.events.forEach((e, i) => {
       e.metadata.version = i + 1;
     });
+
+    if (this.events.length > this.maxSize) {
+      this.events = this.events.slice(-this.maxSize);
+      this.eventIds = new Set(this.events.map((event) => event.metadata.id));
+      this.events.forEach((e, i) => {
+        e.metadata.version = i + 1;
+      });
+    }
+
     this.version = this.events.length;
+    return true;
   }
 
   /**
@@ -192,36 +214,19 @@ export class EventLog {
    * Internal: Apply single event to state
    */
   private applyEvent<T>(state: T, event: StateEvent): T {
-    const pathParts = event.path.split('.');
-    let current = state as any;
-
-    // Navigate to parent object
-    for (let i = 0; i < pathParts.length - 1; i++) {
-      if (!(pathParts[i] in current)) {
-        current[pathParts[i]] = {};
-      }
-      current = current[pathParts[i]];
-    }
-
-    const lastKey = pathParts[pathParts.length - 1];
-
     switch (event.type) {
       case 'set':
       case 'update':
-      case 'merge':
-        current[lastKey] = event.value;
-        break;
-      case 'delete':
-        delete current[lastKey];
-        break;
-      case 'undo':
-        current[lastKey] = event.previousValue;
-        break;
       case 'redo':
-        current[lastKey] = event.value;
-        break;
+        return setAtPath(state, event.path, event.value);
+      case 'merge':
+        return event.path === 'root'
+          ? deepClone(event.value as T)
+          : setAtPath(state, event.path, event.value);
+      case 'delete':
+        return deleteAtPath(state, event.path);
+      case 'undo':
+        return setAtPath(state, event.path, event.previousValue);
     }
-
-    return state;
   }
 }

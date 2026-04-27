@@ -14,14 +14,14 @@ describe('Syncwave - Advanced Features', () => {
       store.set('count', 42);
       await new Promise((r) => setTimeout(r, 100));
 
-      const stored = await adapter.get(`syncwave:${store.getClientId()}`);
+      const stored = await adapter.get('syncwave:default');
       expect(stored).toBeTruthy();
 
       const data = JSON.parse(stored!);
       expect(data.snapshot.data.count).toBe(42);
     });
 
-    it('should load state from adapter on init', async () => {
+    it('should load state from adapter on init when using the same persistence key', async () => {
       const adapter = new MemoryAdapter();
       const store1 = createStore(
         { count: 0 },
@@ -36,8 +36,9 @@ describe('Syncwave - Advanced Features', () => {
         { persistenceAdapter: adapter }
       );
 
-      // Would load in real scenario
-      expect(store2.getState().count).toBe(0); // Not loaded automatically
+      await store2.whenReady();
+
+      expect(store2.getState().count).toBe(100);
     });
   });
 

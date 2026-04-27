@@ -2,9 +2,16 @@
   "name": "@frxncisxo/syncwave",
   "version": "1.0.0",
   "description": "Distributed state management with real-time sync, offline-first, and automatic conflict resolution using CRDTs",
+  "sideEffects": false,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "dist/index.esm.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.esm.js",
@@ -25,16 +32,46 @@
       "import": "./dist/adapters.esm.js",
       "require": "./dist/adapters.js",
       "types": "./dist/adapters.d.ts"
+    },
+    "./sync": {
+      "import": "./dist/sync.esm.js",
+      "require": "./dist/sync.js",
+      "types": "./dist/sync.d.ts"
+    },
+    "./debugger": {
+      "import": "./dist/debugger.esm.js",
+      "require": "./dist/debugger.js",
+      "types": "./dist/debugger.d.ts"
+    },
+    "./conflicts": {
+      "import": "./dist/conflicts.esm.js",
+      "require": "./dist/conflicts.js",
+      "types": "./dist/conflicts.d.ts"
+    },
+    "./encryption": {
+      "import": "./dist/encryption.esm.js",
+      "require": "./dist/encryption.js",
+      "types": "./dist/encryption.d.ts"
+    },
+    "./vue": {
+      "import": "./dist/vue.esm.js",
+      "require": "./dist/vue.js",
+      "types": "./dist/vue.d.ts"
+    },
+    "./svelte": {
+      "import": "./dist/svelte.esm.js",
+      "require": "./dist/svelte.js",
+      "types": "./dist/svelte.d.ts"
     }
   },
   "scripts": {
-    "build": "tsc && node esbuild.js",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node esbuild.mjs",
     "dev": "tsc --watch",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
     "lint": "eslint src",
     "prepublishOnly": "npm run build && npm run test",
-    "demo": "ts-node examples/multi-client.ts"
+    "demo": "tsx examples/multi-client.ts"
   },
   "keywords": [
     "state-management",
@@ -48,16 +85,19 @@
     "undo-redo",
     "react-hooks"
   ],
-  "author": "You <you@example.com>",
+  "author": "Fran Cisneros",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/username/syncwave"
+    "url": "git+https://github.com/frxcisxo/syncwave.git"
   },
   "bugs": {
-    "url": "https://github.com/username/syncwave/issues"
+    "url": "https://github.com/frxcisxo/syncwave/issues"
   },
-  "homepage": "https://github.com/username/syncwave#readme",
+  "homepage": "https://github.com/frxcisxo/syncwave#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
@@ -66,12 +106,16 @@
     "eslint": "^8.54.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
-    "esbuild": "^0.19.0"
+    "esbuild": "^0.19.0",
+    "tsx": "^4.19.2",
+    "vue": "^3.5.13"
   },
   "peerDependencies": {
-    "react": "^18.0.0"
+    "react": "^18.0.0",
+    "vue": "^3.0.0"
   },
   "peerDependenciesOptional": {
-    "react": true
+    "react": true,
+    "vue": true
   }
 }
